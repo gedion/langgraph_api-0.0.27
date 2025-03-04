@@ -36,7 +36,7 @@ class HttpConfig(TypedDict, total=False):
 
 # env
 
-env = Config()
+env = Config('.env')
 
 
 def _parse_json(json: str | None) -> dict | None:
