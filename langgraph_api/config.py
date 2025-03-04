@@ -59,7 +59,7 @@ MIGRATIONS_PATH = env("MIGRATIONS_PATH", cast=str, default="/storage/migrations"
 REDIS_URI = env("REDIS_URI", cast=str)
 REDIS_CLUSTER = env("REDIS_CLUSTER", cast=bool, default=False)
 REDIS_MAX_CONNECTIONS = env("REDIS_MAX_CONNECTIONS", cast=int, default=500)
-
+REDIS_CONNECT_TIMEOUT= env("REDIS_CONNECT_TIMEOUT", cast=float, default=5.0)
 # server
 ALLOW_PRIVATE_NETWORK = env("ALLOW_PRIVATE_NETWORK", cast=bool, default=False)
 """Only enable for langgraph dev when server is running on loopback address.
@@ -83,7 +83,7 @@ else:
             "default": []
         },
         "allow_methods": {
-            "type": "array", 
+            "type": "array",
             "items": {"type": "string"},
             "default": ["GET"]
         },
