@@ -22,7 +22,11 @@ from langgraph_license.validation import plus_features_enabled
 from langgraph_storage.database import connect
 from langgraph_storage.ops import Crons, Runs, Threads
 from langgraph_storage.retry import retry_db
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 @retry_db
 async def create_run(request: ApiRequest):
@@ -207,16 +211,22 @@ async def wait_run(request: ApiRequest):
         headers={"Location": f"/threads/{thread_id}/runs/{run['run_id']}/join"},
     )
 
-
 @retry_db
 async def wait_run_stateless(request: ApiRequest):
     """Create a stateless run, wait for the output."""
-    payload = await request.json(RunCreateStateless)
-    run_id = uuid6()
-    sub = asyncio.create_task(Runs.Stream.subscribe(run_id))
+    logger.info("Received request for stateless run")
 
+    payload = await request.json(RunCreateStateless)
+    logger.debug(f"Parsed request payload: {payload}")
+
+    run_id = uuid6()
+    logger.debug(f"Generated run ID: {run_id}")
+
+    sub = asyncio.create_task(Runs.Stream.subscribe(run_id))
+    
     try:
         async with connect() as conn:
+            logger.info("Connected to database")
             run = await create_valid_run(
                 conn,
                 None,
@@ -224,7 +234,9 @@ async def wait_run_stateless(request: ApiRequest):
                 request.headers,
                 run_id=run_id,
             )
-    except Exception:
+            logger.debug(f"Created valid run: {run}")
+    except Exception as e:
+        logger.error(f"Exception while creating run: {e}", exc_info=True)
         if not sub.cancelled():
             handle = await sub
             await handle.__aexit__(None, None, None)
@@ -233,39 +245,51 @@ async def wait_run_stateless(request: ApiRequest):
     last_chunk = ValueEvent()
 
     async def consume():
+        logger.info("Started consuming stream data")
         vchunk: bytes | None = None
-        async with aclosing(
-            Runs.Stream.join(
-                run["run_id"], thread_id=run["thread_id"], stream_mode=await sub
-            )
-        ) as stream:
-            async for mode, chunk in stream:
-                if mode == b"values":
-                    vchunk = chunk
-                elif mode == b"error":
-                    vchunk = orjson.dumps({"__error__": orjson.Fragment(chunk)})
+        try:
+            async with aclosing(
+                Runs.Stream.join(
+                    run["run_id"], thread_id=run["thread_id"], stream_mode=await sub
+                )
+            ) as stream:
+                async for mode, chunk in stream:
+                    if mode == b"values":
+                        vchunk = chunk
+                        logger.debug("Received value chunk")
+                    elif mode == b"error":
+                        vchunk = orjson.dumps({"__error__": orjson.Fragment(chunk)})
+                        logger.warning("Received error chunk")
             last_chunk.set(vchunk)
+        except Exception as e:
+            logger.error(f"Error in consuming stream: {e}", exc_info=True)
 
-    # keep the connection open by sending whitespace every 5 seconds
-    # leading whitespace will be ignored by json parsers
     async def body() -> AsyncIterator[bytes]:
+        """Keep the connection open by sending whitespace every 5 seconds."""
         stream = asyncio.create_task(consume())
+        logger.info("Started streaming response body")
         while True:
             try:
                 yield await asyncio.wait_for(last_chunk.wait(), timeout=5)
+                logger.debug("Chunk sent to client")
                 break
             except TimeoutError:
+                logger.warning("Timeout waiting for chunk, sending keep-alive")
                 yield b"\n"
             except asyncio.CancelledError:
+                logger.info("Stream task cancelled")
                 stream.cancel()
                 await stream
                 raise
 
-    return StreamingResponse(
+    response = StreamingResponse(
         body(),
         media_type="application/json",
         headers={"Location": f"/threads/{run['thread_id']}/runs/{run['run_id']}/join"},
     )
+    logger.info("Returning streaming response")
+    
+    return response
 
 
 @retry_db
