@@ -115,6 +115,7 @@ async def get_graph(
 
 
 def graph_exists(graph_id: str) -> bool:
+    print('GRAPHS ', GRAPHS)
     """Return whether a graph exists."""
     return graph_id in GRAPHS
 
@@ -165,6 +166,7 @@ def is_js_spec(spec: GraphSpec) -> bool:
 def _load_graph_config_from_env() -> dict | None:
     """Return graph config from env."""
     config_str = os.getenv("LANGGRAPH_CONFIG")
+    print('config_str ', config_str)
     if not config_str:
         return None
 
@@ -180,7 +182,7 @@ async def collect_graphs_from_env(register: bool = False) -> None:
 
     paths_str = os.getenv("LANGSERVE_GRAPHS")
     config_per_graph = _load_graph_config_from_env() or {}
-
+    print('config_per_graph ', config_per_graph)
     if paths_str:
         specs = [
             (
@@ -200,6 +202,7 @@ async def collect_graphs_from_env(register: bool = False) -> None:
             )
             for key, value in json.loads(paths_str).items()
         ]
+        print('specs ', specs)
     else:
         specs = [
             GraphSpec(
@@ -211,6 +214,7 @@ async def collect_graphs_from_env(register: bool = False) -> None:
             )
             for graph_path in glob.glob("/graphs/*.py")
         ]
+        print('specs ', specs)
 
     js_specs = list(filter(is_js_spec, specs))
     py_specs = list(filterfalse(is_js_spec, specs))
@@ -254,8 +258,12 @@ async def collect_graphs_from_env(register: bool = False) -> None:
                 await register_graph(spec.id, graph, spec.config)
 
     for spec in py_specs:
+        print('_graph_from_spec ', _graph_from_spec)
         graph = await run_in_executor(None, _graph_from_spec, spec)
+        print('graph ', graph)
         if register:
+            print('id ', spec.id)
+            print('spec config ', spec.config)
             await register_graph(spec.id, graph, spec.config)
 
 
