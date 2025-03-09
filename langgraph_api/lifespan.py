@@ -15,9 +15,7 @@ from langgraph_storage.database import start_pool, stop_pool
 
 @asynccontextmanager
 async def lifespan(app: Starlette):
-    print('ls1')
     if not await get_license_status():
-        print('ls2')
         raise ValueError(
             "License verification failed. Please ensure proper configuration:\n"
             "- For local development, set a valid LANGSMITH_API_KEY for an account with LangGraph Cloud access "
@@ -27,24 +25,17 @@ async def lifespan(app: Starlette):
             "Review your configuration settings and try again. If issues persist, "
             "contact support for assistance."
         )
-    print('ls3')
     await start_http_client()
-    print('ls4')
     await start_pool()
-    print('ls5')
     await collect_graphs_from_env(True)
-    print('ls6')
     try:
         async with SimpleTaskGroup(cancel=True) as tg:
             tg.create_task(metadata_loop())
             tg.create_task(queue(config.N_JOBS_PER_WORKER, config.BG_JOB_TIMEOUT_SECS))
             if config.FF_CRONS_ENABLED and plus_features_enabled():
                 tg.create_task(cron_scheduler())
-            print('ls7')
             yield
     finally:
-        print('ls8')
         await stop_remote_graphs()
         await stop_http_client()
         await stop_pool()
-        print('ls10')

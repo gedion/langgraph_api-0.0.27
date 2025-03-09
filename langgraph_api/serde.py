@@ -95,9 +95,8 @@ _option = orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NON_STR_KEYS
 
 def json_dumpb(obj) -> bytes:
     return orjson.dumps(obj, default=default, option=_option).replace(
-        b"\u0000", b""
-    )  # null unicode char not allowed in json
-
+        rb"\u0000", b""
+    )
 
 def json_loads(content: bytes | Fragment | dict) -> Any:
     if isinstance(content, Fragment):
