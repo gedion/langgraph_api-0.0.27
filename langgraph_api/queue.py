@@ -126,7 +126,7 @@ async def queue(concurrency: int, timeout: float):
                 if tup := await exit.enter_async_context(Runs.next(wait=wait)):
                     run_, attempt_ = tup
                     task = asyncio.create_task(
-                        worker(timeout, exit, run_, attempt_),
+                        worker(timeout, exit, run_, attempt_, loop),
                         name=f"run-{run_['run_id']}-attempt-{attempt_}",
                     )
                     task.add_done_callback(cleanup)
@@ -207,6 +207,7 @@ async def worker(
     exit: AsyncExitStack,
     run: Run,
     attempt: int,
+    loop
 ) -> WorkerResult:
     run_id = run["run_id"]
     if attempt == 1:
@@ -221,7 +222,7 @@ async def worker(
     async with (
         connect() as conn,
         set_auth_ctx_for_run(run["kwargs"]),
-        Runs.enter(run_id) as done,
+        Runs.enter(run_id, loop=loop) as done,
         exit,
     ):
         temporary = run["kwargs"].get("temporary", False)
