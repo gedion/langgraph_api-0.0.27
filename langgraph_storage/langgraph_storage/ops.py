@@ -1656,7 +1656,7 @@ SELECT * FROM inflight_runs"""
                     if not await cur.fetchone():
                         raise HTTPException(status_code=404, detail="Thread not found")
 
-            log = logger.isEnabledFor(logging.DEBUG)
+            log = logging
             pubsub: StreamHandler | None = None
             try:
                 pubsub = (
