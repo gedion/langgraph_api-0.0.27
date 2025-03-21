@@ -287,10 +287,11 @@ async def consume(stream: AnyStream, run_id: str) -> None:
             if isinstance(e, ExceptionGroup):
                 e = e.exceptions[0]
             await Runs.Stream.publish(
-                run_id, "error", await run_in_executor(None, json_dumpb, e)
+                run_id, "error", await run_in_executor(None, json_dumpb, str(e))
             )
             raise e from None
-
+        else:
+            await Runs.Stream.publish(run_id, "done", b"{}")  # 👈 Add this
 
 def get_feedback_urls(run_id: str, feedback_keys: list[str]) -> dict[str, str]:
     client = get_langsmith_client()
