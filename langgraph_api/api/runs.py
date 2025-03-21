@@ -109,7 +109,11 @@ async def stream_run(
             cancel_on_disconnect=on_disconnect == "cancel",
             stream_mode=await sub,
         ),
-        headers={"Location": f"/threads/{thread_id}/runs/{run['run_id']}/stream"},
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run['run_id']}/stream",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Sometimes helps Vercel/CDNs stream properly
+        },
     )
 
 
@@ -146,7 +150,9 @@ async def stream_run_stateless(
             stream_mode=await sub,
         ),
         headers={
-            "Location": f"/threads/{run['thread_id']}/runs/{run['run_id']}/stream"
+            "Location": f"/threads/{run['thread_id']}/runs/{run['run_id']}/stream",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Sometimes helps Vercel/CDNs stream properly
         },
     )
 
@@ -208,7 +214,11 @@ async def wait_run(request: ApiRequest):
     return StreamingResponse(
         body(),
         media_type="application/json",
-        headers={"Location": f"/threads/{thread_id}/runs/{run['run_id']}/join"},
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run['run_id']}/join",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Sometimes helps Vercel/CDNs stream properly
+        },
     )
 
 @retry_db
@@ -285,7 +295,11 @@ async def wait_run_stateless(request: ApiRequest):
     response = StreamingResponse(
         body(),
         media_type="application/json",
-        headers={"Location": f"/threads/{run['thread_id']}/runs/{run['run_id']}/join"},
+        headers={
+            "Location": f"/threads/{run['thread_id']}/runs/{run['run_id']}/join",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Sometimes helps Vercel/CDNs stream properly
+        },
     )
     logger.info("Returning streaming response")
     

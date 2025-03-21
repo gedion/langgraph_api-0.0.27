@@ -1642,8 +1642,9 @@ SELECT * FROM inflight_runs"""
             filter_clause, filter_params = _build_filter_query(
                 filters=filters, table_alias="thread"
             )
+
+            # Optional auth check
             if filter_params:
-                # TODO: This should be pushed downwards:
                 query = f"""
                 SELECT run_id FROM run
                 JOIN thread USING (thread_id)
@@ -1656,7 +1657,6 @@ SELECT * FROM inflight_runs"""
                     if not await cur.fetchone():
                         raise HTTPException(status_code=404, detail="Thread not found")
 
-            log = logging
             pubsub: StreamHandler | None = None
             try:
                 pubsub = (
@@ -1665,8 +1665,9 @@ SELECT * FROM inflight_runs"""
                     else get_pubsub()
                 )
                 async with pubsub, connect() as conn:
-                    # subscribe to events
                     control_channel = CHANNEL_RUN_CONTROL.format(run_id)
+
+                    # Subscribe to appropriate channels
                     if stream_mode is pubsub:
                         pass  # already subscribed
                     elif stream_mode is None:
@@ -1678,55 +1679,64 @@ SELECT * FROM inflight_runs"""
                             CHANNEL_RUN_STREAM.format(run_id, stream_mode),
                             control_channel,
                         )
+
                     logger.info(
                         "Joined run stream",
                         run_id=str(run_id),
                         thread_id=str(thread_id),
                     )
-                    # stream events
+
                     len_prefix = len(CHANNEL_RUN_STREAM.format(run_id, "").encode())
                     timeout = WAIT_TIMEOUT
+                    drained = False
+
                     while True:
                         if event := await pubsub.get_message(True, timeout=timeout):
                             if event["channel"] == control_channel.encode():
                                 if event["data"] == b"done":
+                                    logger.info("Received 'done' control message")
                                     timeout = DRAIN_TIMEOUT
                             else:
-                                # mode, data
                                 yield event["channel"][len_prefix:], event["data"]
-                                if log:
-                                    logger.debug(
-                                        "Streamed run event",
-                                        run_id=str(run_id),
-                                        stream_mode=event["channel"][len_prefix:],
-                                        data=event["data"],
-                                    )
+                                logger.debug(
+                                    "Streamed run event",
+                                    run_id=str(run_id),
+                                    stream_mode=event["channel"][len_prefix:],
+                                    data=event["data"],
+                                )
                         elif timeout == DRAIN_TIMEOUT:
+                            logger.info("Draining complete, closing stream")
+                            drained = True
                             break
                         else:
                             run_iter = await Runs.get(
                                 conn, run_id, thread_id=thread_id, ctx=ctx
                             )
                             run = await anext(run_iter, None)
-                            if run is None or run["status"] not in (
-                                "pending",
-                                "running",
-                            ):
+                            if run is None or run["status"] not in ("pending", "running"):
+                                logger.info("Run is no longer active, triggering drain")
                                 timeout = DRAIN_TIMEOUT
                             if run is None and not ignore_404:
                                 yield (
                                     b"error",
-                                    HTTPException(
-                                        status_code=404, detail="Run not found"
-                                    ),
+                                    HTTPException(status_code=404, detail="Run not found"),
                                 )
+
+                    # Final forced flush to ensure Vercel closes connection
+                    if drained:
+                        yield b"debug", b"stream_end"
+
+                    logger.info("Exited run stream cleanly")
+
             except asyncio.CancelledError:
+                logger.info("Run stream cancelled")
                 if pubsub:
                     pubsub.close()
                 if cancel_on_disconnect:
                     create_task(cancel_run(thread_id, run_id))
                 raise
 
+            
         @staticmethod
         async def publish(
             run_id: UUID,
