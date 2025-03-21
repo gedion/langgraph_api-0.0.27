@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, AsyncContextManager, Literal, cast  # noqa: UP035
 from uuid import UUID, uuid4
+import orjson  # Make sure this is already imported
 
 import coredis
 import coredis.commands
@@ -1724,7 +1725,7 @@ SELECT * FROM inflight_runs"""
 
                     # Final forced flush to ensure Vercel closes connection
                     if drained:
-                        yield b"debug", b"stream_end"
+                        yield b"debug", orjson.dumps({"type": "stream_end"})
 
                     logger.info("Exited run stream cleanly")
 
