@@ -1692,7 +1692,7 @@ SELECT * FROM inflight_runs"""
                         if event := await pubsub.get_message(True, timeout=timeout):
                             if event["channel"] == control_channel.encode():
                                 if event["data"] == b"done":
-                                    yield b"done", b"stream_end"
+                                    yield b"done", b'"stream_end"'
                                     stream_closed = True
                                     continue
                             else:
