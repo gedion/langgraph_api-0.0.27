@@ -1677,24 +1677,21 @@ SELECT * FROM inflight_runs"""
                             CHANNEL_RUN_STREAM.format(run_id, stream_mode),
                             control_channel,
                         )
-
                     logger.info(
                         "Joined run stream",
                         run_id=str(run_id),
                         thread_id=str(thread_id),
                     )
-
                     len_prefix = len(CHANNEL_RUN_STREAM.format(run_id, "").encode())
                     timeout = WAIT_TIMEOUT
-                    stream_closed = False
-
-                    while not stream_closed:
-                        if event := await pubsub.get_message(True, timeout=timeout):
+                    while True:
+                        event = await pubsub.get_message(True, timeout=timeout)
+                        if event:
                             if event["channel"] == control_channel.encode():
                                 if event["data"] == b"done":
-                                    yield b"done", b'"stream_end"'
-                                    stream_closed = True
-                                    continue
+                                    # Emit final done event immediately
+                                    yield b"done", orjson.dumps({"event": "stream_closed"})
+                                    break
                             else:
                                 yield (
                                     event["channel"][len_prefix:],
@@ -1708,7 +1705,7 @@ SELECT * FROM inflight_runs"""
                                         data=event["data"],
                                     )
                         elif timeout == DRAIN_TIMEOUT:
-                            stream_closed = True
+                            break
                         else:
                             run_iter = await Runs.get(
                                 conn, run_id, thread_id=thread_id, ctx=ctx
@@ -1717,13 +1714,7 @@ SELECT * FROM inflight_runs"""
                             if run is None or run["status"] not in ("pending", "running"):
                                 timeout = DRAIN_TIMEOUT
                             if run is None and not ignore_404:
-                                yield (
-                                    b"error",
-                                    HTTPException(status_code=404, detail="Run not found"),
-                                )
-
-                    # Final close signal (if something waits for one more tick)
-                    yield b"done", b"stream_closed"
+                                yield b"error", orjson.dumps({"error": "Run not found"})
 
             except asyncio.CancelledError:
                 if pubsub:
