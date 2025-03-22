@@ -1677,20 +1677,22 @@ SELECT * FROM inflight_runs"""
                             CHANNEL_RUN_STREAM.format(run_id, stream_mode),
                             control_channel,
                         )
+
                     logger.info(
                         "Joined run stream",
                         run_id=str(run_id),
                         thread_id=str(thread_id),
                     )
+
                     len_prefix = len(CHANNEL_RUN_STREAM.format(run_id, "").encode())
                     timeout = WAIT_TIMEOUT
                     stream_closed = False
+
                     while not stream_closed:
                         if event := await pubsub.get_message(True, timeout=timeout):
                             if event["channel"] == control_channel.encode():
                                 if event["data"] == b"done":
-                                    # SSE stream close signal
-                                    yield b"event: done\ndata: stream_end\n\n"
+                                    yield b"done", b"stream_end"
                                     stream_closed = True
                                     continue
                             else:
@@ -1712,27 +1714,24 @@ SELECT * FROM inflight_runs"""
                                 conn, run_id, thread_id=thread_id, ctx=ctx
                             )
                             run = await anext(run_iter, None)
-                            if run is None or run["status"] not in (
-                                "pending",
-                                "running",
-                            ):
+                            if run is None or run["status"] not in ("pending", "running"):
                                 timeout = DRAIN_TIMEOUT
                             if run is None and not ignore_404:
                                 yield (
                                     b"error",
-                                    HTTPException(
-                                        status_code=404, detail="Run not found"
-                                    ),
+                                    HTTPException(status_code=404, detail="Run not found"),
                                 )
-                    # final SSE end block (double newline to close)
-                    yield b"\n"
+
+                    # Final close signal (if something waits for one more tick)
+                    yield b"done", b"stream_closed"
+
             except asyncio.CancelledError:
                 if pubsub:
                     pubsub.close()
                 if cancel_on_disconnect:
                     create_task(cancel_run(thread_id, run_id))
                 raise
-            
+
         @staticmethod
         async def publish(
             run_id: UUID,
@@ -1740,7 +1739,6 @@ SELECT * FROM inflight_runs"""
             message: bytes,
         ) -> None:
             await get_redis().publish(CHANNEL_RUN_STREAM.format(run_id, event), message)
-
 
 class Crons(Authenticated):
     resource = "crons"
